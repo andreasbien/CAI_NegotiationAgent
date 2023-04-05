@@ -1,8 +1,9 @@
 from random import randint
 from time import time
-from typing import cast
+from typing import cast, List
 from typing import Any, Dict, Union, Set, Optional
-
+import copy
+import scipy.stats as sts
 from geniusweb.actions.Accept import Accept
 from geniusweb.actions.Action import Action
 from geniusweb.actions.Offer import Offer
@@ -36,26 +37,104 @@ class OpponentModel():
         self.bids = []
         self.domain = domain
         self.issueWeightsEstimate = Dict[str, float]
-        self.valueOccurences = Dict[str, {}]
+        #self.valueOccurences = Dict[str, {}]
 
 
         self.valueUtilitiesEstimate = Dict[str, Dict[Value, float]]
 
         self.opponentStrategyFuzzySet = []
         self.confidence = 0
+        self.maxWindowSize = None
+        self.cumulativeFrequences = Dict[str, List[Dict[Value, float]]]
+
 
         self.currentBid = None
 
 
     def update_bids(self, bid: Bid):
         for issue in self.domain.getIssues():
-            self.valueOccurences[issue] += 1
+            self.cumulativeFrequences[issue].append(copy.copy(self.cumulativeFrequences[issue][len(self.bids)-1]))
+            self.cumulativeFrequencies[issue][len(bid)][bid.getValue(issue)] += 1
         self.bids.append(bid)
+
+    def chi_2_test(self, f1, f2):
+        pass
+
 
 
 
     def update_issue_weights(self):
-        return 0
+        differentWindowLengthWeights = []
+
+        for w in range(2, self.maxWindowSize):
+            currentWindowWeight = self.get_issue_weights(w)
+            differentWindowLengthWeights.append(currentWindowWeight)
+
+        score = []
+        for weights in differentWindowLengthWeights:
+            _, pScore = -sts.chisquare(list(weights))
+            for weight_other in differentWindowLengthWeights:
+                _, p = sts.chisquare(weights, w)
+                pScore += p
+            score.append(pScore)
+
+        highestScore = 0
+        for x, s in enumerate(score):
+            if score[highestScore] < s:
+                highestScore = x
+        self.issueWeightsEstimate = differentWindowLengthWeights[highestScore]
+
+
+
+
+
+
+
+    def get_issue_weights(self, w):
+        weights = Dict[str, float]
+        for issue in self.domain.getIssues():
+            weights[issue] = 0
+
+        for window in range(w, len(self.bids), w):
+            e = set()
+            concession = False
+            for issue in self.domain.getIssues():
+                delta = self.getUpdateRule(window - w)
+                freqInPrevWindow = self.get_freq_in_window(w, window - w)
+                freqInWindow = self.get_freq_in_window(w, window)
+                _, p = sts.chisquare(freqInPrevWindow, freqInWindow)
+                if(p > 0.05):
+                    e.add(issue)
+                else:
+                    utilityPrev = self.linearAdditive(issue, freqInPrevWindow)
+                    utilityNow = self.linearAdditive(issue, freqInWindow)
+                    if (utilityNow * 1.05 < utilityPrev):
+                        concession = True
+                if concession:
+                    for issue in e:
+                        weights[issue] += delta
+        totalWeight = 0;
+        for issue in self.domain.getIssues():
+            totalWeight += weights[issue]
+        for issue in self.domain.getIssues():
+            weights[issue] /= totalWeight
+        return weights
+
+    def linearAdditive(self, issue, frequency):
+        valueUtilities = self.valueUtilitiesEstimate[issue]
+        totalUtility = 0
+        for value in self.domain.getValues(issue):
+            totalUtility += frequency[value] * valueUtilities[value]
+        return totalUtility
+
+    def get_freq_in_window(self, windowLength, windowFinish, issue):
+        windowStart = windowFinish - windowLength
+        windowFrequencies = Dict[Value, float]
+        for value in self.domain.getValues(issue):
+            windowFrequencies[value] = (1 + self.cumulativeFrequences[issue][value][windowFinish] - self.cumulativeFrequences[issue][value][windowStart])/windowLength
+
+
+
     def update_value_utilities(self):
         for issue in self.domain.getIssues():
             self.valueUtilitiesEstimate[issue] = self.get_utilities(self, issue)
@@ -91,5 +170,7 @@ class OpponentModel():
             value = bid.getValue(issue)
             utility += self.issueWeightsEstimate[issue] * self.valueUtilitiesEstimate[issue][value]
         return utility
+
+
 
 
