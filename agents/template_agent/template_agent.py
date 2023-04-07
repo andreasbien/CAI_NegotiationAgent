@@ -2,7 +2,7 @@ import logging
 from random import randint
 from time import time
 from typing import cast
-
+import math
 from geniusweb.actions.Accept import Accept
 from geniusweb.actions.Action import Action
 from geniusweb.actions.Offer import Offer
@@ -47,6 +47,12 @@ class TemplateAgent(DefaultParty):
         self.other: str = None
         self.settings: Settings = None
         self.storage_dir: str = None
+
+        self.current_utility_bids = []
+        self.bid_history = []
+        self.stage = 0
+        self.bid_stages = None
+        self.utility_delta_threshold = 0.4
 
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
@@ -137,7 +143,7 @@ class TemplateAgent(DefaultParty):
         Returns:
             str: Agent description
         """
-        return "Template agent for the ANL 2022 competition"
+        return "The best Agent"
 
     def opponent_action(self, action):
         """Process an action that was received from the opponent.
@@ -169,6 +175,7 @@ class TemplateAgent(DefaultParty):
         else:
             # if not, find a bid to propose as counter offer
             bid = self.find_bid()
+            self.bid_history.append(bid)
             action = Offer(self.me, bid)
 
         # send the action
@@ -203,23 +210,53 @@ class TemplateAgent(DefaultParty):
         return all(conditions)
 
     def find_bid(self) -> Bid:
-        # compose a list of all possible bids
-        domain = self.profile.getDomain()
-        all_bids = AllBidsList(domain)
+        # Create a list of groups of bids ranked by utility.
+        # First group has 0.95 to 1 utility, second has 0.90 to 0.95 etc.
+
+        if not self.bid_stages:
+            self.bid_stages = []
+            for i in range(20):
+                self.bid_stages.append([])
+
+            domain = self.profile.getDomain()
+            all_bids = AllBidsList(domain)
+            for bid in all_bids:
+                our_utility = float(self.profile.getUtility(bid))
+                stage_index = 20 - math.ceil(our_utility * 20)
+                if stage_index == 20:
+                    stage_index = 19
+                self.bid_stages[stage_index].append(bid)
 
         best_bid_score = 0.0
         best_bid = None
 
-        # take 500 attempts to find a bid according to a heuristic score
-        for _ in range(500):
-            bid = all_bids.get(randint(0, all_bids.size() - 1))
-            bid_score = self.score_bid(bid)
-            if bid_score > best_bid_score:
-                best_bid_score, best_bid = bid_score, bid
+        while not best_bid:
 
+            # pick a suitable bid from the current utility stage
+            for bid in self.bid_stages[self.stage]:
+
+                bid_score = self.score_bid(bid)
+
+                our_utility = float(self.profile.getUtility(bid))
+
+                if self.opponent_model is not None:
+                    opponent_utility = self.opponent_model.get_predicted_utility(bid)
+
+                    # remove the bid if it has less than 2 matching values and the opponent's utility is too low
+                    if bid_score < 2 and opponent_utility < our_utility - self.utility_delta_threshold:
+                        self.bid_stages[self.stage].remove(bid)
+                        continue
+
+                if bid_score > best_bid_score:
+                    best_bid_score, best_bid = bid_score, bid
+
+            # move to next stage if a bid has not been found
+            if not best_bid:
+                self.stage += 1
+        self.bid_stages[self.stage].remove(best_bid)
         return best_bid
 
-    def score_bid(self, bid: Bid, alpha: float = 0.95, eps: float = 0.1) -> float:
+    def score_bid(self, bid: Bid) -> float:
         """Calculate heuristic score for a bid
 
         Args:
@@ -232,16 +269,23 @@ class TemplateAgent(DefaultParty):
         Returns:
             float: score
         """
-        progress = self.progress.get(time() * 1000)
 
-        our_utility = float(self.profile.getUtility(bid))
+        difference = 0
+        for issue in bid.getIssues():
+            if bid.getValue(issue).__eq__(self.last_received_bid.getValue(issue)):
+                difference += 1
+            #difference += math.fabs(bid.getValue(issue) - self.last_received_bid.getValue(issue))
 
-        time_pressure = 1.0 - progress ** (1 / eps)
-        score = alpha * time_pressure * our_utility
+        # progress = self.progress.get(time() * 1000)
 
-        if self.opponent_model is not None:
-            opponent_utility = self.opponent_model.get_predicted_utility(bid)
-            opponent_score = (1.0 - alpha * time_pressure) * opponent_utility
-            score += opponent_score
+        # our_utility = float(self.profile.getUtility(bid))
 
-        return score
+        # time_pressure = 1.0 - progress ** (1 / eps)
+        # score = alpha * time_pressure * our_utility
+
+        # if self.opponent_model is not None:
+        #    opponent_utility = self.opponent_model.get_predicted_utility(bid)
+        #    opponent_score = (1.0 - alpha * time_pressure) * opponent_utility
+        #    score += opponent_score
+
+        return difference
