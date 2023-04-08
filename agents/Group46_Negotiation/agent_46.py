@@ -202,11 +202,17 @@ class OurAgent(DefaultParty):
         # progress of the negotiation session between 0 and 1 (1 is deadline)
         progress = self.progress.get(time() * 1000)
 
+        # TODO: Use the next bid that we would have made, not the last bid that we made
+        last_bid = bid
+        if len(self.bid_history) > 0:
+            last_bid = self.bid_history[-1]
+
         # very basic approach that accepts if the offer is valued above 0.7 and
         # 95% of the time towards the deadline has passed
         conditions = [
-            self.profile.getUtility(bid) > 0.8,
-            progress > 0.95,
+            progress > 0.8,
+            self.profile.getUtility(bid) > self.profile.getUtility(last_bid),
+
         ]
         return all(conditions)
 
@@ -231,6 +237,16 @@ class OurAgent(DefaultParty):
         best_bid_score = 0.0
         best_bid = None
 
+        progress = self.progress.get(time() * 1000)
+
+        # move to next stage based on time passed
+        # TODO: see if there are better ways to move to stages
+        # TODO: find optimal value, maybe based on reserved values, maybe make it non-linear
+        if progress > (self.stage + 1) * 0.15:
+            self.stage += 1
+
+        # TODO: maybe keep track of best bids proposed by opponent, and propose them if progress is very high
+
         while not best_bid:
 
             # pick a suitable bid from the current utility stage
@@ -238,23 +254,25 @@ class OurAgent(DefaultParty):
 
                 bid_score = self.score_bid(bid)
 
-                our_utility = float(self.profile.getUtility(bid))
+                # our_utility = float(self.profile.getUtility(bid))
 
-                if self.opponent_model is not None:
-                    opponent_utility = self.opponent_model.get_predicted_utility(bid)
+                # if self.opponent_model is not None:
+                #     opponent_utility = self.opponent_model.get_predicted_utility(bid)
+                #
+                #     # remove the bid if it has less than 2 matching values and the opponent's utility is too low
+                #     if bid_score < 2 and opponent_utility < our_utility - self.utility_delta_threshold:
+                #         self.bid_stages[self.stage].remove(bid)
+                #         continue
 
-                    # remove the bid if it has less than 2 matching values and the opponent's utility is too low
-                    if bid_score < 2 and opponent_utility < our_utility - self.utility_delta_threshold:
-                        self.bid_stages[self.stage].remove(bid)
-                        continue
-
-                if bid_score > best_bid_score:
+                # check if bid has been recently proposed
+                # TODO: find optimal value
+                if bid_score > best_bid_score and bid not in self.bid_history[-3:]:
                     best_bid_score, best_bid = bid_score, bid
 
             # move to next stage if a bid has not been found
             if not best_bid:
                 self.stage += 1
-        self.bid_stages[self.stage].remove(best_bid)
+
         return best_bid
 
     def score_bid(self, bid: Bid) -> float:
@@ -270,17 +288,19 @@ class OurAgent(DefaultParty):
         Returns:
             float: score
         """
-
+        # Score based on how many matching issue values there are
+        # TODO: Maybe include the opponent utility
         difference = 0
         for issue in bid.getIssues():
             if bid.getValue(issue).__eq__(self.last_received_bid.getValue(issue)):
                 difference += 1
             # difference += math.fabs(bid.getValue(issue) - self.last_received_bid.getValue(issue))
 
+        return difference
+
         # progress = self.progress.get(time() * 1000)
 
         # our_utility = float(self.profile.getUtility(bid))
-
         # time_pressure = 1.0 - progress ** (1 / eps)
         # score = alpha * time_pressure * our_utility
 
@@ -288,5 +308,3 @@ class OurAgent(DefaultParty):
         #    opponent_utility = self.opponent_model.get_predicted_utility(bid)
         #    opponent_score = (1.0 - alpha * time_pressure) * opponent_utility
         #    score += opponent_score
-
-        return difference
