@@ -111,6 +111,7 @@ class OpponentModel:
         if(len(self.bids) > 150):
             print(len(self.bids))
             for issue in self.domain.getIssues():
+                print(issue)
                 print(self.cumulativeFrequencies[issue][len(self.bids)])
             print(self.issueWeightsEstimate)
 
@@ -138,7 +139,8 @@ class OpponentModel:
                     fPrev.append(freqInPrevWindow[value])
                     fCurr.append(freqInWindow[value])
                 _, p = sts.chisquare(fPrev, fCurr)
-
+                if issue == "issueC":
+                    print(p)
                 if(p > 0.5):
                     e.add(issue)
                 else:
@@ -151,6 +153,8 @@ class OpponentModel:
             if concession:
                 for issue in e:
                     weights[issue] += delta
+            if "issueC" not in e:
+                print("issueC")
         totalWeight = 0
 
         minWeight = min(weights.values())
@@ -184,9 +188,10 @@ class OpponentModel:
         windowStart = windowFinish - windowLength
         windowFrequencies : Dict[Value, float] = {}
         # total = 0
+        totalValues = self.domain.getValues(issue).size()
         for value in self.domain.getValues(issue):
             # total += self.cumulativeFrequencies[issue][windowFinish][value] - self.cumulativeFrequencies[issue][windowStart][value]
-            windowFrequencies[value] = (0.1 * windowLength + self.cumulativeFrequencies[issue][windowFinish][value] - self.cumulativeFrequencies[issue][windowStart][value]) / windowLength
+            windowFrequencies[value] = (0.1/totalValues * windowLength + self.cumulativeFrequencies[issue][windowFinish][value] - self.cumulativeFrequencies[issue][windowStart][value]) / windowLength
         # if total != windowLength:
         #     print(total)
         return windowFrequencies
