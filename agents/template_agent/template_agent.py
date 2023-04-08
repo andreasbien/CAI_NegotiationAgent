@@ -201,6 +201,7 @@ class TemplateAgent(DefaultParty):
         # progress of the negotiation session between 0 and 1 (1 is deadline)
         progress = self.progress.get(time() * 1000)
 
+        #TODO: Use the next bid that we would have made, not the last bid that we made
         last_bid = bid
         if len(self.bid_history) > 0:
             last_bid = self.bid_history[-1]
