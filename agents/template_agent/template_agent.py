@@ -240,7 +240,7 @@ class TemplateAgent(DefaultParty):
 
         # move to next stage based on time passed
         # TODO: see if there are better ways to move to stages
-        # TODO: find optimal value
+        # TODO: find optimal value, maybe based on reserved values, maybe make it non-linear
         if progress > (self.stage + 1) * 0.15:
             self.stage += 1
 
