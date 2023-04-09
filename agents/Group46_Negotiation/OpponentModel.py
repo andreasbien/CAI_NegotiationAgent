@@ -76,6 +76,10 @@ class OpponentModel:
         self.bids.append(bid)
         self.bidTimes.append(self.progress.get(time() * 1000))
 
+        if len(self.bids) > 30 and len(self.bids) % 5 == 0:
+            self.update_value_utilities()
+            self.update_issue_weights()
+
 
 
 
@@ -234,9 +238,7 @@ class OpponentModel:
 
 
     def evaluate_bid_utility(self, bid:Bid):
-        if len(self.bids) > 30 and len(self.bids) % 5 == 0:
-            self.update_value_utilities()
-            self.update_issue_weights()
+
         utility = 0
         for issue in self.domain.getIssues():
             value = bid.getValue(issue)
