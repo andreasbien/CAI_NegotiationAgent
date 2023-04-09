@@ -156,12 +156,12 @@ class OurAgent(DefaultParty):
         if isinstance(action, Offer):
             # create opponent model if it was not yet initialised
             if self.opponent_model is None:
-                self.opponent_model = OpponentModel.OpponentModel(self.domain)
+                self.opponent_model = OpponentModel.OpponentModel(self.domain, self.progress, 30)
 
             bid = cast(Offer, action).getBid()
 
             # update opponent model with bid
-            self.opponent_model.update(bid)
+            self.opponent_model.update_bids(bid)
             # set bid as last received
             self.last_received_bid = bid
 
