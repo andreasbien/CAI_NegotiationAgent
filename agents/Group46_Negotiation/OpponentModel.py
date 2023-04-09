@@ -83,6 +83,7 @@ class OpponentModel:
 
     def update_issue_weights(self):
         differentWindowLengthWeights = []
+        differentWindowLengthWeights.append(self.issueWeightsEstimate)
 
         for w in range(1, min(int(len(self.bids)/5), self.maxWindowSize), 5):
             currentWindowWeight = self.get_issue_weights(w)
@@ -107,13 +108,17 @@ class OpponentModel:
             if score[highestScore] < s:
                 highestScore = x
 
+        # if we changed the score, then that improves our confidence
+        if highestScore != 0:
+            self.confidence += (1 - self.confidence) * 0.1
+
         self.issueWeightsEstimate = differentWindowLengthWeights[highestScore]
-        if(len(self.bids) > 50):
-            print(len(self.bids))
-            for issue in self.domain.getIssues():
-                print(issue)
-                print(self.cumulativeFrequencies[issue][len(self.bids)])
-            print(self.issueWeightsEstimate)
+        # if(len(self.bids) > 50):
+        #     print(len(self.bids))
+        #     for issue in self.domain.getIssues():
+        #         print(issue)
+        #         print(self.cumulativeFrequencies[issue][len(self.bids)])
+        #     print(self.issueWeightsEstimate)
 
 
 
