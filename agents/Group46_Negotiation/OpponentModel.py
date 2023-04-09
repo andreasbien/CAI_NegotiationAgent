@@ -91,7 +91,7 @@ class OpponentModel:
         score = []
         for weights in differentWindowLengthWeights:
             _, pScore = sts.chisquare(list(weights.values()))
-            pScore *= -len(differentWindowLengthWeights)*3
+            pScore *= -len(differentWindowLengthWeights)
             for weight_other in differentWindowLengthWeights:
                 wCurr = []
                 wOth = []
@@ -108,7 +108,7 @@ class OpponentModel:
                 highestScore = x
 
         self.issueWeightsEstimate = differentWindowLengthWeights[highestScore]
-        if(len(self.bids) > 150):
+        if(len(self.bids) > 50):
             print(len(self.bids))
             for issue in self.domain.getIssues():
                 print(issue)
@@ -139,9 +139,8 @@ class OpponentModel:
                     fPrev.append(freqInPrevWindow[value])
                     fCurr.append(freqInWindow[value])
                 _, p = sts.chisquare(fPrev, fCurr)
-                if issue == "issueC":
-                    print(p)
-                if(p > 0.5):
+
+                if(p > 0.05):
                     e.add(issue)
                 else:
 
@@ -153,14 +152,13 @@ class OpponentModel:
             if concession:
                 for issue in e:
                     weights[issue] += delta
-            if "issueC" not in e:
-                print("issueC")
+
         totalWeight = 0
 
         minWeight = min(weights.values())
         for issue in self.domain.getIssues():
-            weights[issue] -= minWeight/2
-            weights[issue] **= 2
+            weights[issue] -= minWeight/5
+            #weights[issue] **= 2
             totalWeight += weights[issue]
         for issue in self.domain.getIssues():
             weights[issue] /= totalWeight
