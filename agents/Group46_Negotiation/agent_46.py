@@ -54,6 +54,9 @@ class OurAgent(DefaultParty):
         self.stage = 0
         self.bid_stages = None
         self.utility_delta_threshold = 0.4
+        self.second_to_last_received_bid = None
+        self.acceptance_combi_threshold = 0.8
+        self.offer_history = []
 
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
@@ -159,6 +162,7 @@ class OurAgent(DefaultParty):
                 self.opponent_model = OpponentModel.OpponentModel(self.domain, self.progress, 30)
 
             bid = cast(Offer, action).getBid()
+            self.offer_history.append(bid)
 
             # update opponent model with bid
             self.opponent_model.update_bids(bid)
@@ -196,6 +200,64 @@ class OurAgent(DefaultParty):
     ###########################################################################################
 
     def accept_condition(self, bid: Bid) -> bool:
+        # return self.accept_condition_simple(bid)
+        # return self.accept_condition_last_bid(bid)
+        # return self.accept_condition_next_bid(bid)
+         return self.accept_condition_combi(bid)
+
+    def accept_condition_combi(self, bid: Bid) -> bool:
+        if bid is None:
+            return False
+
+        # progress of the negotiation session between 0 and 1 (1 is deadline)
+        progress = self.progress.get(time() * 1000)
+
+        last_bid = bid
+        if len(self.bid_history) > 0:
+            last_bid = self.bid_history[-1]
+
+        # if the last bid made by the opponent has a higher utility than our last bid
+        next_condition = self.profile.getUtility(bid) > self.profile.getUtility(last_bid)
+        time_and_max_condition = False
+
+        # If we approach the deadline, we check if the last received offer has a better utility than each of
+        # the previous offers made in a time window equal in size to the amount of time left to the deadline
+        if progress > self.acceptance_combi_threshold:
+            bids_amount_left = min(int(((1 - progress) / progress) * len(self.offer_history)), len(self.offer_history))
+            window_offers = self.offer_history[-bids_amount_left:-1]
+            last_offer = self.offer_history[-1]
+            max_utility_window = 0
+            for window_offer in window_offers:
+                max_utility_window = max(max_utility_window, self.profile.getUtility(window_offer))
+            if max_utility_window < self.profile.getUtility(last_offer):
+                time_and_max_condition = True
+
+        conditions = [next_condition or time_and_max_condition]
+        return all(conditions)
+
+    def accept_condition_next_bid(self, bid: Bid) -> bool:
+        if bid is None:
+            return False
+
+        # progress of the negotiation session between 0 and 1 (1 is deadline)
+        progress = self.progress.get(time() * 1000)
+
+        last_bid = bid
+        if self.second_to_last_received_bid is not None:
+            bid = self.second_to_last_received_bid
+        if len(self.bid_history) > 0:
+            last_bid = self.bid_history[-1]
+
+        # very basic approach that accepts if the offer is valued above 0.7 and
+        # 95% of the time towards the deadline has passed
+        conditions = [
+            progress > 0.8,
+            self.profile.getUtility(bid) > self.profile.getUtility(last_bid),
+
+        ]
+        return all(conditions)
+
+    def accept_condition_last_bid(self, bid: Bid) -> bool:
         if bid is None:
             return False
 
@@ -213,6 +275,21 @@ class OurAgent(DefaultParty):
             progress > 0.8,
             self.profile.getUtility(bid) > self.profile.getUtility(last_bid),
 
+        ]
+        return all(conditions)
+
+    def accept_condition_simple(self, bid: Bid) -> bool:
+        if bid is None:
+            return False
+
+        # progress of the negotiation session between 0 and 1 (1 is deadline)
+        progress = self.progress.get(time() * 1000)
+
+        # very basic approach that accepts if the offer is valued above 0.7 and
+        # 95% of the time towards the deadline has passed
+        conditions = [
+            self.profile.getUtility(bid) > 0.8,
+            progress > 0.95,
         ]
         return all(conditions)
 
