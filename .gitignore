@@ -9,3 +9,5 @@ results
 
 *.sbatch
 *.log
+env/
+utils/domains/
