@@ -294,12 +294,14 @@ class OurAgent(DefaultParty):
 
                 # check if bid has been recently proposed
                 # TODO: find optimal value
-                if bid_score > best_bid_score and bid not in self.bid_history[-3:]:
+
+                if bid_score > best_bid_score and (len(self.bid_history) < 5 or bid not in self.bid_history[-5:]):
                     best_bid_score, best_bid = bid_score, bid
 
             # move to next stage if a bid has not been found
             if not best_bid:
                 self.stage += 1
+                bids_to_consider.extend(self.bid_stages[self.stage])
 
         return best_bid
 
@@ -322,8 +324,9 @@ class OurAgent(DefaultParty):
                 match += 1
             # difference += math.fabs(bid.getValue(issue) - self.last_received_bid.getValue(issue))
         match_percent = match/len(bid.getIssues())
+        match_weight = (1 - progress) if progress < 0.5 else 0
         estimated_opponent_utility = self.opponent_model.evaluate_bid_utility(bid)
-        calculated_utility = (1 - progress) * match_percent + progress * estimated_opponent_utility
+        calculated_utility = match_weight * match_percent + progress * estimated_opponent_utility
         return calculated_utility
 
         # progress = self.progress.get(time() * 1000)
