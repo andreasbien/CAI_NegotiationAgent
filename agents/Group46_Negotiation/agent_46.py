@@ -201,9 +201,9 @@ class OurAgent(DefaultParty):
 
     def accept_condition(self, bid: Bid) -> bool:
         # return self.accept_condition_simple(bid)
-        # return self.accept_condition_last_bid(bid)
+         return self.accept_condition_last_bid(bid)
         # return self.accept_condition_next_bid(bid)
-         return self.accept_condition_combi(bid)
+        # return self.accept_condition_combi(bid)
 
     def accept_condition_combi(self, bid: Bid) -> bool:
         if bid is None:
