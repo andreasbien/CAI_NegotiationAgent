@@ -242,6 +242,15 @@ class OurAgent(DefaultParty):
         best_bid_score = 0.0
         best_bid = None
 
+        if len(self.bid_history) == 0:
+            for bid in self.bid_stages[0]:
+                our_utility = float(self.profile.getUtility(bid))
+                if our_utility > best_bid_score:
+                    best_bid_score = our_utility
+                    best_bid = bid
+
+            return best_bid
+
         progress = self.progress.get(time() * 1000)
         # TODO: see if there are better ways to move to stages
         # TODO: find optimal value, maybe based on reserved values, maybe make it non-linear
