@@ -54,9 +54,6 @@ class OurAgent(DefaultParty):
         self.stage = 0
         self.bid_stages = None
         self.utility_delta_threshold = 0.4
-        self.second_to_last_received_bid = None
-        self.acceptance_combi_threshold = 0.8
-        self.offer_history = []
 
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
@@ -162,10 +159,14 @@ class OurAgent(DefaultParty):
                 self.opponent_model = OpponentModel.OpponentModel(self.domain, self.progress, 30)
 
             bid = cast(Offer, action).getBid()
-            self.offer_history.append(bid)
+
+            bid_utility = self.profile.getUtility(bid)
+            last_bid_utility = 0
+            if(self.last_received_bid is not None):
+                last_bid_utility = self.profile.getUtility(self.last_received_bid)
 
             # update opponent model with bid
-            self.opponent_model.update_bids(bid)
+            self.opponent_model.update_bids(bid, self.last_received_bid, bid_utility, last_bid_utility)
             # set bid as last received
             self.last_received_bid = bid
 
@@ -200,64 +201,6 @@ class OurAgent(DefaultParty):
     ###########################################################################################
 
     def accept_condition(self, bid: Bid) -> bool:
-        # return self.accept_condition_simple(bid)
-        # return self.accept_condition_last_bid(bid)
-        # return self.accept_condition_next_bid(bid)
-         return self.accept_condition_combi(bid)
-
-    def accept_condition_combi(self, bid: Bid) -> bool:
-        if bid is None:
-            return False
-
-        # progress of the negotiation session between 0 and 1 (1 is deadline)
-        progress = self.progress.get(time() * 1000)
-
-        last_bid = bid
-        if len(self.bid_history) > 0:
-            last_bid = self.bid_history[-1]
-
-        # if the last bid made by the opponent has a higher utility than our last bid
-        next_condition = self.profile.getUtility(bid) > self.profile.getUtility(last_bid)
-        time_and_max_condition = False
-
-        # If we approach the deadline, we check if the last received offer has a better utility than each of
-        # the previous offers made in a time window equal in size to the amount of time left to the deadline
-        if progress > self.acceptance_combi_threshold:
-            bids_amount_left = min(int(((1 - progress) / progress) * len(self.offer_history)), len(self.offer_history))
-            window_offers = self.offer_history[-bids_amount_left:-1]
-            last_offer = self.offer_history[-1]
-            max_utility_window = 0
-            for window_offer in window_offers:
-                max_utility_window = max(max_utility_window, self.profile.getUtility(window_offer))
-            if max_utility_window < self.profile.getUtility(last_offer):
-                time_and_max_condition = True
-
-        conditions = [next_condition or time_and_max_condition]
-        return all(conditions)
-
-    def accept_condition_next_bid(self, bid: Bid) -> bool:
-        if bid is None:
-            return False
-
-        # progress of the negotiation session between 0 and 1 (1 is deadline)
-        progress = self.progress.get(time() * 1000)
-
-        last_bid = bid
-        if self.second_to_last_received_bid is not None:
-            bid = self.second_to_last_received_bid
-        if len(self.bid_history) > 0:
-            last_bid = self.bid_history[-1]
-
-        # very basic approach that accepts if the offer is valued above 0.7 and
-        # 95% of the time towards the deadline has passed
-        conditions = [
-            progress > 0.8,
-            self.profile.getUtility(bid) > self.profile.getUtility(last_bid),
-
-        ]
-        return all(conditions)
-
-    def accept_condition_last_bid(self, bid: Bid) -> bool:
         if bid is None:
             return False
 
@@ -275,21 +218,6 @@ class OurAgent(DefaultParty):
             progress > 0.8,
             self.profile.getUtility(bid) > self.profile.getUtility(last_bid),
 
-        ]
-        return all(conditions)
-
-    def accept_condition_simple(self, bid: Bid) -> bool:
-        if bid is None:
-            return False
-
-        # progress of the negotiation session between 0 and 1 (1 is deadline)
-        progress = self.progress.get(time() * 1000)
-
-        # very basic approach that accepts if the offer is valued above 0.7 and
-        # 95% of the time towards the deadline has passed
-        conditions = [
-            self.profile.getUtility(bid) > 0.8,
-            progress > 0.95,
         ]
         return all(conditions)
 
@@ -315,21 +243,35 @@ class OurAgent(DefaultParty):
         best_bid = None
 
         progress = self.progress.get(time() * 1000)
-
-        # move to next stage based on time passed
         # TODO: see if there are better ways to move to stages
         # TODO: find optimal value, maybe based on reserved values, maybe make it non-linear
-        if progress > (self.stage + 1) * 0.15:
-            self.stage += 1
+
+        # move to next stage based on how sensitive the opponent agent is to our preferences
+        # (i.e. how conceding they are)
+        if(len(self.bid_history) > 30):
+            # concedence score > 0 means that the opponent tend to concede (both our and their utility)
+            concedence_score = self.opponent_model.concedencePoint / self.opponent_model.bidCount
+            # print(concedence_score)
+            # move to next stage based on time passed
+            # right now it starts to concede more if the opponent is conceding
+            scale = (1 + concedence_score * 10)
+            scaled_progress = progress * scale
+            if scaled_progress > (self.stage + 1) * 0.15:
+                self.stage += 1
 
         # TODO: maybe keep track of best bids proposed by opponent, and propose them if progress is very high
+
+        # sets the upper limit to be always at the top.
+        bids_to_consider = []
+        for i in range(0, self.stage+1):
+            bids_to_consider.extend(self.bid_stages[i])
 
         while not best_bid:
 
             # pick a suitable bid from the current utility stage
-            for bid in self.bid_stages[self.stage]:
+            for bid in bids_to_consider:
 
-                bid_score = self.score_bid(bid)
+                bid_score = self.score_bid(bid, progress)
 
                 # our_utility = float(self.profile.getUtility(bid))
 
@@ -352,9 +294,8 @@ class OurAgent(DefaultParty):
 
         return best_bid
 
-    def score_bid(self, bid: Bid) -> float:
+    def score_bid(self, bid: Bid, progress) -> float:
         """Calculate heuristic score for a bid
-
         Args:
             bid (Bid): Bid to score
             alpha (float, optional): Trade-off factor between self interested and
@@ -366,14 +307,15 @@ class OurAgent(DefaultParty):
             float: score
         """
         # Score based on how many matching issue values there are
-        # TODO: Maybe include the opponent utility
-        difference = 0
+        match = 0
         for issue in bid.getIssues():
             if bid.getValue(issue).__eq__(self.last_received_bid.getValue(issue)):
-                difference += 1
+                match += 1
             # difference += math.fabs(bid.getValue(issue) - self.last_received_bid.getValue(issue))
-
-        return difference
+        match_percent = match/len(bid.getIssues())
+        estimated_opponent_utility = self.opponent_model.evaluate_bid_utility(bid)
+        calculated_utility = (1 - progress) * match_percent + progress * estimated_opponent_utility
+        return calculated_utility
 
         # progress = self.progress.get(time() * 1000)
 

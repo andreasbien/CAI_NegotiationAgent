@@ -41,8 +41,6 @@ class OpponentModel:
         self.issueWeightsEstimate : Dict[str, float] = {}
         self.progress = progress
         #self.valueOccurences = Dict[str, {}]
-
-
         self.valueUtilitiesEstimate : Dict[str, Dict[Value, float]] = {}
 
         self.opponentStrategyFuzzySet = []
@@ -64,25 +62,70 @@ class OpponentModel:
 
             self.valueUtilitiesEstimate[issue] = initialValues
         self.bidTimes = []
-
-
         self.currentBid = None
 
+        # To compute the sensitivity of the opponent. Sensitivity < 1 then an agent is insensitive to opponent preferences
+        # If sensitivity > 1, then an agent is sensitive to the opponent’s preferences
+        self.concedencePoint = 0
+        self.bidCount = 0.000001
 
-    def update_bids(self, bid: Bid):
+
+    # def get_fortunate_nice_concession_moves(self):
+    #     return self.fortunate_nice_concession_moves
+    #
+    # def get_selfish_unfortunate_silent_moves(self):
+    #     return self.selfish_unfortunate_silent_moves
+
+
+
+    def update_bids(self, bid: Bid, last_bid: Bid, bid_utility, last_bid_utility):
         for issue in self.domain.getIssues():
             self.cumulativeFrequencies[issue].append(copy.copy(self.cumulativeFrequencies[issue][len(self.bids)]))
             self.cumulativeFrequencies[issue][len(self.bids) + 1][bid.getValue(issue)] += 1
         self.bids.append(bid)
         self.bidTimes.append(self.progress.get(time() * 1000))
 
+        # only start calculating the sensitivity of the opponent after 30 bids are made
+        # (After the opponent starts to get an idea of the utilities of our agent)
+        if(last_bid is not None):
+            if len(self.bids) > 30:
+                our_utility_difference = float(bid_utility - last_bid_utility)
+                opponent_utility_difference = float(self.evaluate_bid_utility(bid) - self.evaluate_bid_utility(last_bid))
+
+                # if the current bid increases the utility for our agent
+                if(our_utility_difference > 0):
+                    # add the sum of our gain and their loss (if they have a loss)
+                    # or subtract their gain from our gain
+                    # basically calculating how much they concede
+                    # (sum of how much a bid increases our utility and decreases theirs)
+                    self.concedencePoint += (our_utility_difference - opponent_utility_difference)
+                    self.bidCount += 1
+                else:
+                    # in case of an unfortunate move, we do not change anything
+                    if(opponent_utility_difference > 0):
+                        # calculates how much they do the opposite of conceding
+                        # (sum of how much they gain and how much we lose)
+                        self.concedencePoint -= (opponent_utility_difference - our_utility_difference)
+                        self.bidCount += 1
+
+
+                # # if the current bid increases the utility for our agent (not opponent)
+                # if(our_utility_difference > 0):
+                #     self.fortunate_nice_concession_unfortunate_moves += our_utility_difference
+                #     - opponent_utility_difference
+                # else:
+                #     # in case of an unfortunate move, we do not change anything
+                #     if(opponent_utility_difference > 0):
+                #         # if decline in our utility is high and increase in their utility is high, we want to give a
+                #         # higher weight to selfish_silent_moves
+                #         self.selfish_silent_moves += abs(our_utility_difference) + opponent_utility_difference
+
+        # print(self.fortunate_nice_concession_moves)
+        # print(self.selfish_unfortunate_silent_moves)
+
         if len(self.bids) > 30 and len(self.bids) % 5 == 0:
             self.update_value_utilities()
             self.update_issue_weights()
-
-
-
-
 
 
     def update_issue_weights(self):
@@ -231,12 +274,6 @@ class OpponentModel:
         return valueUtilities
 
 
-
-
-
-
-
-
     def evaluate_bid_utility(self, bid:Bid):
 
         utility = 0
@@ -252,7 +289,3 @@ class OpponentModel:
         beta = 7
         t = self.bidTimes[w]
         return alpha * (1 - t ** beta)
-
-
-
-
