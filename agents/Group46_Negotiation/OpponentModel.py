@@ -81,7 +81,6 @@ class OpponentModel:
             with open('agents/Group46_Negotiation/data.csv', mode='w', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow(data)
-                print(data)
 
     # def get_fortunate_nice_concession_moves(self):
     #     return self.fortunate_nice_concession_moves
