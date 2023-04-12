@@ -3,6 +3,8 @@ import math
 from random import randint
 from time import time
 from typing import cast
+import numpy as np
+import decimal
 
 from geniusweb.actions.Accept import Accept
 from geniusweb.actions.Action import Action
@@ -54,6 +56,7 @@ class OurAgent(DefaultParty):
         self.stage = 0
         self.bid_stages = None
         self.utility_delta_threshold = 0.4
+        self.concession_offers = []
 
         self.last_received_bid: Bid = None
         self.opponent_model: OpponentModel = None
@@ -164,6 +167,9 @@ class OurAgent(DefaultParty):
             last_bid_utility = 0
             if(self.last_received_bid is not None):
                 last_bid_utility = self.profile.getUtility(self.last_received_bid)
+                # if this bid has a lower utility, add it to concession offers
+                if self.opponent_model.evaluate_bid_utility(self.last_received_bid) > self.opponent_model.evaluate_bid_utility(bid):
+                    self.concession_offers.append(bid)
 
             # update opponent model with bid
             self.opponent_model.update_bids(bid, self.last_received_bid, bid_utility, last_bid_utility)
@@ -199,6 +205,46 @@ class OurAgent(DefaultParty):
     ###########################################################################################
     ################################## Example methods below ##################################
     ###########################################################################################
+
+    # uses all concession offers to make an estimate of the minimum of the opponents reservation value with ~99% accuracy
+    def calculate_reservation(self) -> float:
+        length = len(self.concession_offers)
+        if length <= 4:
+            return 0
+        reservation_values = []
+        for i in range(length):
+            bid_a_one = self.concession_offers[i]
+            j = i+1
+            while(j < length and self.opponent_model.evaluate_bid_utility(self.concession_offers[j]) >= self.opponent_model.evaluate_bid_utility(bid_a_one)):
+                j = j+1
+            if(j >= length):
+                break
+            bid_a_two = self.concession_offers[j]
+            for k in range(i+1, length):
+                if k is not j:
+                    bid_b_one = self.concession_offers[k]
+                    l = k+1
+                    while (l < length and self.opponent_model.evaluate_bid_utility(self.concession_offers[l]) >= self.opponent_model.evaluate_bid_utility(bid_b_one)):
+                        l = l+1
+                    if (l >= length):
+                        break
+                    bid_b_two = self.concession_offers[l]
+                    ut_a_one = self.opponent_model.evaluate_bid_utility(bid_a_one)
+                    ut_a_two = self.opponent_model.evaluate_bid_utility(bid_a_two)
+                    ut_b_one = self.opponent_model.evaluate_bid_utility(bid_b_one)
+                    ut_b_two = self.opponent_model.evaluate_bid_utility(bid_b_two)
+                    if ut_a_one > ut_b_one and ut_a_two > ut_b_two:
+                        denominator = (ut_b_one + ut_a_two - ut_b_two - ut_a_one)
+                        if denominator is decimal.Decimal(0):
+                            denominator = decimal.Decimal(1.e-8)
+                        reservation_estimate = (ut_b_one * ut_a_two - ut_b_two * ut_a_one) / denominator
+                        reservation_values.append(reservation_estimate)
+        if len(reservation_values) == 0:
+            return 0
+        res_mean = np.mean(reservation_values)
+        res_std = np.std(reservation_values)
+        reservation_value = max(0, res_mean - 3 * res_std)
+        return reservation_value
 
     def accept_condition(self, bid: Bid) -> bool:
         # return self.accept_condition_simple(bid)
@@ -355,6 +401,8 @@ class OurAgent(DefaultParty):
 
                 if bid_score > best_bid_score and (len(self.bid_history) < 5 or bid not in self.bid_history[-5:]):
                     best_bid_score, best_bid = bid_score, bid
+                    #if progress < 0.95 or self.opponent_model.evaluate_bid_utility(bid) > self.calculate_reservation():
+                     #   best_bid_score, best_bid = bid_score, bid
 
             # move to next stage if a bid has not been found
             if not best_bid:
