@@ -6,6 +6,7 @@ import copy
 
 import numpy as np
 import scipy.stats as sts
+import csv
 from geniusweb.actions.Accept import Accept
 from geniusweb.actions.Action import Action
 from geniusweb.actions.Offer import Offer
@@ -34,8 +35,9 @@ from geniusweb.progress.ProgressTime import ProgressTime
 from geniusweb.references.Parameters import Parameters
 from tudelft_utilities_logging.ReportToLogger import ReportToLogger
 
+
 class OpponentModel:
-    def __init__(self, domain:Domain, progress: ProgressTime, maxWindowSize):
+    def __init__(self, domain:Domain, progress: ProgressTime, maxWindowSize, test=False):
         self.bids = []
         self.domain = domain
         self.issueWeightsEstimate : Dict[str, float] = {}
@@ -68,7 +70,18 @@ class OpponentModel:
         # If sensitivity > 1, then an agent is sensitive to the opponent’s preferences
         self.concedencePoint = 0
         self.bidCount = 0.000001
-
+        # for analysis
+        self.fields = []
+        data = ["progress", "window_size"]
+        #collecting data for analysis
+        if test:
+            for issue in self.domain.getIssues():
+                data.append(issue)
+                self.fields.append(issue)
+            with open('agents/Group46_Negotiation/data.csv', mode='w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(data)
+                print(data)
 
     # def get_fortunate_nice_concession_moves(self):
     #     return self.fortunate_nice_concession_moves
@@ -109,36 +122,25 @@ class OpponentModel:
                         self.bidCount += 1
 
 
-                # # if the current bid increases the utility for our agent (not opponent)
-                # if(our_utility_difference > 0):
-                #     self.fortunate_nice_concession_unfortunate_moves += our_utility_difference
-                #     - opponent_utility_difference
-                # else:
-                #     # in case of an unfortunate move, we do not change anything
-                #     if(opponent_utility_difference > 0):
-                #         # if decline in our utility is high and increase in their utility is high, we want to give a
-                #         # higher weight to selfish_silent_moves
-                #         self.selfish_silent_moves += abs(our_utility_difference) + opponent_utility_difference
-
-        # print(self.fortunate_nice_concession_moves)
-        # print(self.selfish_unfortunate_silent_moves)
 
         if len(self.bids) > 30 and len(self.bids) % 5 == 0:
             self.update_value_utilities()
             self.update_issue_weights()
 
 
-    def update_issue_weights(self):
+    def update_issue_weights(self, test=False):
         differentWindowLengthWeights = []
         differentWindowLengthWeights.append(self.issueWeightsEstimate)
-
+        # consider different estimates using different window sizes
         for w in range(1, min(int(len(self.bids)/5), self.maxWindowSize), 5):
             currentWindowWeight = self.get_issue_weights(w)
             differentWindowLengthWeights.append(currentWindowWeight)
 
         score = []
+
         for weights in differentWindowLengthWeights:
             _, pScore = sts.chisquare(list(weights.values()))
+            # lower the score for estimates that closely resemble a uniform distribution
             pScore *= -len(differentWindowLengthWeights)
             for weight_other in differentWindowLengthWeights:
                 wCurr = []
@@ -147,6 +149,7 @@ class OpponentModel:
                     wCurr.append(weights[issue])
                     wOth.append(weight_other[issue])
                 _, p = sts.chisquare(wCurr, wOth)
+                #increase the score for similarity between other estimates
                 pScore += p
             score.append(pScore)
 
@@ -160,12 +163,15 @@ class OpponentModel:
             self.confidence += (1 - self.confidence) * 0.1
 
         self.issueWeightsEstimate = differentWindowLengthWeights[highestScore]
-        # if(len(self.bids) > 50):
-        #     print(len(self.bids))
-        #     for issue in self.domain.getIssues():
-        #         print(issue)
-        #         print(self.cumulativeFrequencies[issue][len(self.bids)])
-        #     print(self.issueWeightsEstimate)
+
+        # for collecting data
+        if(test):
+            data = [self.progress.get(time()*1000), 420]
+            for issue in self.fields:
+                data.append(self.issueWeightsEstimate[issue])
+            with open('agents/Group46_Negotiation/data.csv', mode='a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(data)
 
 
 
@@ -173,8 +179,14 @@ class OpponentModel:
 
 
 
-    def get_issue_weights(self, w):
+    def get_issue_weights(self, w, test=False):
         weights: Dict[str, float] = copy.copy(self.issueWeightsEstimate)
+        testWeight: Dict[str, float] = {}
+        if test:
+
+            mean = 1/len(weights)
+            for issue in self.domain.getIssues():
+                testWeight[issue] = mean
         # for issue in self.domain.getIssues():
         #     weights[issue] = 1/len(self.domain.getIssues())
 
@@ -204,30 +216,45 @@ class OpponentModel:
             if concession:
                 for issue in e:
                     weights[issue] += delta
+                # collecting data for analysis
+                if test:
+                    delta = delta/np.sqrt(window - w)
+                    for issue in e:
+                        testWeight[issue] += delta
 
         totalWeight = 0
+        # collecting data for analysis
+        if test:
+            total = 0
+            for issue in self.domain.getIssues():
+                total += testWeight[issue]
+            for issue in self.domain.getIssues():
+                testWeight[issue] /= total
+            data = [self.progress.get(time()*1000), w]
+            for key in self.fields:
+                data.append(testWeight[key])
+
+            with open('agents/Group46_Negotiation/data.csv', mode='a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(data)
+
 
         minWeight = min(weights.values())
         for issue in self.domain.getIssues():
             weights[issue] -= minWeight/5
-            #weights[issue] **= 2
             totalWeight += weights[issue]
         for issue in self.domain.getIssues():
             weights[issue] /= totalWeight
-             #sts.norm.cdf((weights[issue]/totalWeight - 1/totalWeight)*len(self.domain.getIssues()))
 
         totalWeight = 0
         for issue in self.domain.getIssues():
             totalWeight += weights[issue]
         for issue in self.domain.getIssues():
             weights[issue] /= totalWeight
-        #print(weights)
 
         return weights
 
     def linearAdditive(self, issue, frequency):
-        # if len(self.bids) > 50:
-        #     print(self.valueUtilitiesEstimate)
         valueUtilities = self.valueUtilitiesEstimate[issue]
         totalUtility = 0
         for value in self.domain.getValues(issue):
@@ -240,10 +267,7 @@ class OpponentModel:
         # total = 0
         totalValues = self.domain.getValues(issue).size()
         for value in self.domain.getValues(issue):
-            # total += self.cumulativeFrequencies[issue][windowFinish][value] - self.cumulativeFrequencies[issue][windowStart][value]
             windowFrequencies[value] = (0.1/totalValues * windowLength + self.cumulativeFrequencies[issue][windowFinish][value] - self.cumulativeFrequencies[issue][windowStart][value]) / windowLength
-        # if total != windowLength:
-        #     print(total)
         return windowFrequencies
 
 
@@ -260,6 +284,7 @@ class OpponentModel:
         for value in self.domain.getValues(issue):
             discountedOccurences[value]= 0
         gamma = 0.25
+        #bids are discounted depending on the estimated issue weight. The higher the issue weight, the less it is discounted
         discounting = 0.98 + self.issueWeightsEstimate[issue]/50
         discount = 1
         for bid in self.bids:
@@ -275,12 +300,9 @@ class OpponentModel:
 
 
     def evaluate_bid_utility(self, bid:Bid):
-
         utility = 0
         for issue in self.domain.getIssues():
             value = bid.getValue(issue)
-            # print(issue)
-            # print(self.issueWeightsEstimate)
             utility += self.issueWeightsEstimate[issue] * self.valueUtilitiesEstimate[issue][value]
         return utility
 
