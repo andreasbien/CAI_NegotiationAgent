@@ -76,6 +76,14 @@
       "issueD": 0.46332,
       "issueE": 0.10083
     },
+    "reservationBid":{
+      "issuevalues":{
+        "issueA":"valueB",
+        "issueB":"valueE",
+        "issueC":"valueB",
+        "issueD":"valueA",
+        "issueE":"valueG"
+      }},
     "domain": {
       "name": "domain00",
       "issuesValues": {
